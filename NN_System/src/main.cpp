@@ -19,15 +19,15 @@ extern TwoWire Wire1;
     //Structure of single pulse
     struct Read_pulse_param{   //Single simple pulse (can be used for write or read)
       float Vmin = 0;             //Minimum read voltage (Volts)
-      float Vmax = 1;             //Maximum read voltage (Volts)
-      int Pre_hold_Time = 1;    //Pre hold time before read pulse (microsecond)
-      int Post_hold_Time = 1;   //Post hold time after read pulse (microsecond)
-      int Rise_Time = 1;        //Time taken for the voltage to go from Vmin to Vmax (microsecond)
-      int Fall_Time = 1;        //Time taken for the voltage to go from Vmax to Vmin (microsecond)
-      int Pulse_Time = 10;      //Time during the pulse is at Vmax (microsecond)
-      int Meas_Wait = 10;       //Wait in us before measurements are taken (us)
-      int Meas_Stop = 10;       //Stopping measurements #us before pulse end
-      int Meas_type = 2;        //Type of measurement: 0 - No measurements / 1 - One measurement in middle / 2 - Measurement every #s
+      float Vmax = 2;             //Maximum read voltage (Volts)
+      int Pre_hold_Time = 4;    //Pre hold time before read pulse (microsecond)
+      int Post_hold_Time = 5;   //Post hold time after read pulse (microsecond)
+      int Rise_Time = 3;        //Time taken for the voltage to go from Vmin to Vmax (microsecond)
+      int Fall_Time = 4;        //Time taken for the voltage to go from Vmax to Vmin (microsecond)
+      int Pulse_Time = 8;      //Time during the pulse is at Vmax (microsecond)
+      int Meas_Wait = 2;       //Wait in us before measurements are taken (us)
+      int Meas_Stop = 3;       //Stopping measurements #us before pulse end
+      int Meas_type = 3;        //Type of measurement: 0 - No measurements / 1 - One measurement in middle / 2 - Measurement every #s
     };
 
     //Structure of complex write pulse
@@ -145,7 +145,7 @@ extern TwoWire Wire1;
 //********** Function's prototypes ********//
 int Security_check(struct Full_param Test);
 int Get_needed_samp(struct Read_pulse_param Read_pulse);
-float **Get_read_pulse(struct Read_Pulse_param Read_pulse);
+void Get_read_pulse(struct Read_Pulse_param Read_pulse);
 //******************************************//
 
 
@@ -252,7 +252,7 @@ void setup() {
 
 //********* Main loop code ***********//
 void loop() {
-
+/*
   //Structure with every parameters of the test
   struct Full_param{  //Faire des define pour tous les parametres
     byte mode = 0;        //Measurement mode -> 0 = Single read pulse
@@ -263,8 +263,16 @@ void loop() {
   //Single read operation
 
  //__asm__ __volatile__("NOPX"); // The preprocessor replaces this line with 119ns delay
+*/
+  Serial.begin(9600);             // Uart communication setup
+  float **Read;
+  struct Read_pulse_param Read_pulse_p;
 
-
+  Serial.println("Debut fonction");
+  //Get_needed_samp(Read_pulse_p);
+  Get_read_pulse(Read_pulse_p);
+  Serial.println("Fin fonction");
+  
   while (1){}
 }
 //***********************************//
@@ -309,39 +317,66 @@ int Get_needed_samp(struct Read_pulse_param Read_pulse){
     @Return float Read[2][Total_Time]
      This function generate an array of all needed parameter to generate a read pulse
 */
-float **Get_read_pulse(struct Read_pulse_param Read_pulse){
+void Get_read_pulse(struct Read_pulse_param Read_pulse){
   int Total_Time = 0;
   
-  Total_Time =  Read_pulse.Pre_hold_Time + Read_pulse.Post_hold_Time + Read_pulse.Rise_Time + \
-                Read_pulse.Fall_Time + Read_pulse.Pulse_Time;     //Sum number of voltage windows for the pulse
+  Serial.println("Dans fonction");
+
+  //
+  // Counting the number of windows needed
+  if(Read_pulse.Pre_hold_Time != 0){
+    Total_Time++;
+  }
+  if(Read_pulse.Post_hold_Time != 0){
+    Total_Time++;  
+  }
+  if(Read_pulse.Meas_Wait != 0){
+    Total_Time++;
+  }
+  if(Read_pulse.Meas_Stop != 0){
+    Total_Time++;  
+  }
+  if(Read_pulse.Pulse_Time != 0){
+    Total_Time++;
+  }
+  Total_Time += (Read_pulse.Rise_Time + Read_pulse.Fall_Time);
       
   if(Total_Time > 200){  //Changer valeur pour plus grand array 
-    return 0;
+    //return 0;
   }
 
-  float Rise_deltaV = (Read_pulse.Vmax - Read_pulse.Vmin)/(Read_pulse.Rise_Time);
-  float Fall_deltaV = (Read_pulse.Vmax - Read_pulse.Vmin)/(Read_pulse.Fall_Time);
-
+  float Rise_deltaV = 0; 
+  float Fall_deltaV = 0; 
+  
+  Rise_deltaV = (Read_pulse.Vmax - Read_pulse.Vmin)/(Read_pulse.Rise_Time+1);
+  Fall_deltaV = (Read_pulse.Vmax - Read_pulse.Vmin)/(Read_pulse.Fall_Time+1);
+  
+  Serial.println(Total_Time);
+  Serial.println(Rise_deltaV);
+  Serial.println(Fall_deltaV);
+  
   float **Read;
   Read = (float**)malloc(sizeof(float*) * Total_Time);
-
-  for(int i = 0; i < 2; i++) {
+  
+  
+  for(int i = 0; i < 3; i++) {
       Read[i] = (float*)malloc(sizeof(float*) * Total_Time);
   }
   
   //memset( Read, 0, 2*Total_Time*sizeof(float) );  // Initialise Read array with 0
-  
+  int off = 0;    //offset position
+  int off_post = 0;  //offset reinitialiser
   for(int i=0; i<Total_Time; i++){
-    
     //Pre Hold Time
-    if(i < Read_pulse.Post_hold_Time){
-      Read[0][0] = Read_pulse.Vmin;
-      Read[1][0] = Read_pulse.Pre_hold_Time;
-      Read[2][0] = 0;
-    }  
+    if((Read_pulse.Pre_hold_Time != 0) && (i < 1)){
+      Read[0][i] = Read_pulse.Vmin;
+      Read[1][i] = Read_pulse.Pre_hold_Time;
+      Read[2][i] = 0;
+      off++;
+    }
     //Rise Time
-    else if(i<(Read_pulse.Pre_hold_Time + Read_pulse.Rise_Time)){
-      if((Read_pulse.Pre_hold_Time == 0)&&(i == 0)){  
+    else if(i < (off + Read_pulse.Rise_Time)){
+      if((Read_pulse.Pre_hold_Time == 0)&&(i < 1)){  
         Read[0][i] = Rise_deltaV;
       }
       else{
@@ -351,38 +386,73 @@ float **Get_read_pulse(struct Read_pulse_param Read_pulse){
       Read[2][i] = 0;
     }
     //Pulse Time: Waiting for measurements
-    else if(i<(Read_pulse.Pre_hold_Time + Read_pulse.Rise_Time + Read_pulse.Meas_Wait)){
+    else if(((Read_pulse.Meas_Wait != 0) && (i<(off + Read_pulse.Rise_Time + 1))) && (off < 2)){
       Read[0][i] = Read_pulse.Vmax;
       Read[1][i] = Read_pulse.Meas_Wait; 
       Read[2][i] = 0;   // No measurements during wait
+      off++;
     }
     //Pulse Time: measurements
-    else if(i<(Read_pulse.Pre_hold_Time + Read_pulse.Rise_Time + Read_pulse.Pulse_Time - Read_pulse.Meas_Stop)){
+    else if(i<(off + Read_pulse.Rise_Time + 1)){
       Read[0][i] = Read_pulse.Vmax;
       Read[1][i] = Read_pulse.Pulse_Time; 
       Read[2][i] = Read_pulse.Meas_type;   // Measurement type choosen
     }
     //Pulse Time: Stop measurements
-    else if(i<(Read_pulse.Pre_hold_Time + Read_pulse.Rise_Time + Read_pulse.Pulse_Time)){
+    else if((Read_pulse.Meas_Stop != 0) && (i<(off + Read_pulse.Rise_Time + 2))){
       Read[0][i] = Read_pulse.Vmax;
       Read[1][i] = Read_pulse.Meas_Stop; 
       Read[2][i] = 0;   // No measurements during stop
     }
     //Fall Time
-    else if(i<(Total_Time - Read_pulse.Post_hold_Time)){
+    else if(i<(Total_Time - 1)){
       Read[0][i] = Read[0][i-1]-Fall_deltaV;
       Read[1][i] = 1; 
       Read[2][i] = 0;   // No measurements during stop
     }
     //Post Hold Time
-    else if(i<Total_Time){
+    else if(i<(Total_Time)){
       Read[0][i] = Read_pulse.Vmin;
       Read[1][i] = Read_pulse.Post_hold_Time; 
       Read[2][i] = 0;   // No measurements during stop
-    }    
+    } 
+      
+  }
+
+  Serial.println("PULSE:");
+
+  int i = 0;
+  int j = 0;
+  
+  int windows = Read_pulse.Rise_Time + Read_pulse.Fall_Time + 5;
+  Serial.println("Windows number");
+  Serial.println(windows);
+  
+  for(j = 0; j<3; j++){
+    
+    if(j == 0){
+      Serial.print("Voltage:");
+      Serial.print("\t");
+    }
+    
+    else if(j == 1){
+      Serial.print("Time:");
+      Serial.print("\t\t");
+    }
+    else if(j == 2){
+      Serial.print("Measure:");
+      Serial.print("\t");
+    }
+    
+    for(i=0;i<(Read_pulse.Rise_Time + Read_pulse.Fall_Time + 5);i++){
+      Serial.print(Read[j][i]);
+      Serial.print('\t');
+    }
+    Serial.println();
   }
   
-  return Read;
+  free(Read);
+  
 }
 //***********************************//
 
